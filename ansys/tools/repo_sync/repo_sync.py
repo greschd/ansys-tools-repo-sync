@@ -2,6 +2,7 @@ import os
 import shutil
 import stat
 import subprocess
+import time
 
 import github
 
@@ -9,7 +10,11 @@ import github
 
 
 def synchronize(
-    token: str = None, repository: str = "synchronization-demo", filename: str = None, organization: str = "pyansys"
+    token: str = None,
+     authoritative_repo: str = r"https://github.com/pyansys/synchronization-demo",
+     repository: str = "synchronization-demo2",
+     organization: str = "pyansys",
+     filename: str = None
 ):
     """Synchronize the content of two different repositories.
     - clone the content of the reference repository
@@ -29,7 +34,25 @@ def synchronize(
 
     # Clone the repo.
     process = subprocess.Popen(
-        ["git", "clone", f"https://{token}@github.com/{organization}/{repository}"],
+        #["git", "clone", f"{authoritative_repo}", "--depth", "1"],
+        # see https://stackoverflow.com/questions/28983842/remote-rejected-shallow-update-not-allowed-after-changing-git-remote-url
+        ["git", "clone", f"{authoritative_repo}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, stderr = process.communicate()
+
+    # Change the remote url
+    time.sleep(5)
+    process = subprocess.Popen(
+        ["git", "remote", "set-url", "origin", f"https://{token}@github.com/{organization}/{repository}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    stdout, stderr = process.communicate()
+
+    process = subprocess.Popen(
+        ["git", "remote", "set-url", "origin", f"https://{token}@github.com/{organization}/{repository}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -44,7 +67,8 @@ def synchronize(
     # )
     # stdout, stderr = process.communicate()
 
-    os.chdir(repository)
+    # os.chdir(repository)
+    os.chdir(authoritative_repo.split("/")[-1])
 
     # Create a new branch.
     try:
@@ -94,6 +118,21 @@ def synchronize(
         )
         stdout, stderr = process.communicate()
 
+    # no history in common with main
+        process = subprocess.Popen(
+            ["git", "pull", "origin", "main", "--allow-unrelated-histories", "-X", "theirs"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, stderr = process.communicate()
+
+        process = subprocess.Popen(
+            ["git", "commit", "-am", "merge"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, stderr = process.communicate()
+
     process = subprocess.Popen(
         ["git", "push", "-u", "origin", branch_name],
         stdout=subprocess.PIPE,
@@ -109,7 +148,8 @@ def synchronize(
     # Delete the git repository that was created.
     parent_folder = os.path.dirname(os.getcwd())
     os.chdir(parent_folder)
-    shutil.rmtree(os.path.join(parent_folder, repository), onerror=on_rm_error)
+    folder_name = authoritative_repo.split("/")[-1]
+    shutil.rmtree(os.path.join(parent_folder, folder_name), onerror=on_rm_error)
 
 
 def on_rm_error(func, path, exc_info):
